@@ -561,7 +561,8 @@ static void txio_hash_tapleaf_hash(cursor_io *io,
         struct sha256_ctx ctx;
         struct sha256 hash;
         tagged_hash_init(&ctx, TAPLEAF_SHA256(is_elements), SHA256_LEN);
-        hash_u8(&ctx, 0xc0); /* leaf_version */
+        /* leaf_version: tapscript is 0xc4 on Elements chains, 0xc0 on Bitcoin */
+        hash_u8(&ctx, is_elements ? 0xc4 : 0xc0);
         hash_varbuff(&ctx, tapleaf_script, tapleaf_script_len);
         sha256_done(&ctx, &hash);
         hash_bytes(&io->ctx, hash.u.u8, sizeof(hash));
