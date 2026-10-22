@@ -2,13 +2,13 @@
 
 This repository is a fork of
 [ElementsProject/libwally-core](https://github.com/ElementsProject/libwally-core)
-carrying two Sequentia-specific patches. Everything below the horizontal rule
+carrying three Sequentia patches. Everything below the horizontal rule
 is the unmodified upstream README; upstream API documentation applies
 unchanged.
 
 **Why this fork exists.** Sequentia is a Bitcoin sidechain for asset
 tokenization and disintermediated exchanges, built on Elements (node
-repository: [Sequentia](https://github.com/ConcatenaLabs/Sequentia)). Two
+repository: [Sequentia](https://github.com/ConcatenaLabs/Sequentia)). Three
 things stock libwally gets wrong for it:
 
 1. **The issuance denomination byte.** Sequentia extends the Elements
@@ -24,7 +24,11 @@ things stock libwally gets wrong for it:
    `tx_from_bytes`, `get_txin_issuance_size` and `tx_to_bytes` in
    `src/transaction.c`, and the new field
    `struct wally_tx_input.issuance_denomination`, 0 for non-issuance inputs),
-   so issuance transactions round-trip byte-exact.
+   so issuance transactions round-trip byte-exact. The node's signature
+   hashes serialize the whole issuance, the byte included, so the patch hashes
+   it too (`hash_asset_issuance` in `src/tx_io.c`): without it, every
+   signature over a transaction that issues, on any of its inputs, is one the
+   chain refuses.
 2. **The script-path signature hash on Elements.** For a taproot script-path
    spend, BIP341's signature message ends with the hash of the leaf being
    spent. Stock libwally hashes that leaf with tapscript's Bitcoin leaf
@@ -35,13 +39,20 @@ things stock libwally gets wrong for it:
    uses `0xc4` for Elements transactions (`txio_hash_tapleaf_hash` in
    `src/tx_io.c`). Key-path signature hashes, and every Bitcoin signature
    hash, are unchanged.
+3. **An issuance without a reissuance token, from a PSET.** Extracting a
+   transaction from a PSET input that sets an issuance amount writes both the
+   amount and the token count explicitly, so an issuance with no token gets an
+   explicit token count of zero, which the chain refuses
+   (`bad-txns-in-ne-out`). The patch leaves an amount of zero null
+   (`psbt_build_input` in `src/psbt.c`). A PSET has no field for the
+   denomination, so an issuance built from one has denomination 0.
 
 Full technical detail, including the exact byte layout and compatibility
 caveats, is in [SEQUENTIA-PATCH.md](./SEQUENTIA-PATCH.md).
 
 **Branches.**
 
-- `sequentia-issuance-denomination` carries both patches, based on upstream
+- `sequentia-issuance-denomination` carries the three patches, based on upstream
   release 1.4.0. Pin this branch.
 - `master` and all other branches track upstream and are unpatched.
 
@@ -49,9 +60,10 @@ caveats, is in [SEQUENTIA-PATCH.md](./SEQUENTIA-PATCH.md).
 Lightning fork that runs on Sequentia and Bitcoin from the same binary) pins
 this branch through its `external/libwally-core` git submodule on the
 `sequentia-stable` branch. Without the first patch, `lightningd` crashes as
-soon as it syncs a Sequentia block containing an asset issuance; without the
-second, its signers cannot spend the script paths of its taproot channel
-outputs.
+soon as it syncs a Sequentia block containing an asset issuance, and its
+wallet cannot sign a transaction that issues one; without the second, its
+signers cannot spend the script paths of its taproot channel outputs; without
+the third, an issuance its wallet builds with no token is refused.
 
 **Compatibility warning.** The patched branch expects the Sequentia issuance
 layout. It will misparse stock Elements/Liquid issuance transactions, which do

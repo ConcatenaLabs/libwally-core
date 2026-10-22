@@ -334,6 +334,7 @@ if BUILD_ELEMENTS
 	$(AM_V_at)$(PYTHON_TEST) test/test_pegin.py
 	$(AM_V_at)$(PYTHON_TEST) test/test_pegout.py
 	$(AM_V_at)$(PYTHON_TEST) test/test_elements.py
+	$(AM_V_at)$(PYTHON_TEST) test/test_sequentia_issuance.py
 endif
 
 if USE_SWIG_PYTHON

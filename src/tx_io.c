@@ -246,6 +246,9 @@ static void hash_asset_issuance(struct sha256_ctx *ctx,
     hash_bytes(ctx, txin->entropy, sizeof(txin->entropy));
     hash_commmitment(ctx, txin->issuance_amount, txin->issuance_amount_len);
     hash_commmitment(ctx, txin->inflation_keys, txin->inflation_keys_len);
+    /* Sequentia: the issuance ends with its denomination byte, and the
+     * node's signature hashes serialize the whole issuance. */
+    hash_u8(ctx, txin->issuance_denomination);
 }
 
 static void hash_issuance_rangeproofs(struct sha256_ctx *ctx,

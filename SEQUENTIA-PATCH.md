@@ -1,8 +1,8 @@
 # The Sequentia patches
 
-This document describes the two Sequentia-specific changes in this fork of
+This document describes the three Sequentia changes in this fork of
 [ElementsProject/libwally-core](https://github.com/ElementsProject/libwally-core).
-Both live on branch `sequentia-issuance-denomination`, on top of the upstream
+All live on branch `sequentia-issuance-denomination`, on top of the upstream
 tag `release_1.4.0`. All other branches are unpatched upstream.
 
 Sequentia is a Bitcoin sidechain for asset tokenization and disintermediated
@@ -52,7 +52,7 @@ issuance or reissuance transaction, and consumers that must parse every block
 
 ### What the patch changes
 
-Two files, all in the Elements-enabled build (`BUILD_ELEMENTS` / not
+All in the Elements-enabled build (`BUILD_ELEMENTS` / not
 `WALLY_ABI_NO_ELEMENTS`):
 
 1. `include/wally_transaction.h`: adds a public field at the end of the
@@ -80,9 +80,17 @@ Two files, all in the Elements-enabled build (`BUILD_ELEMENTS` / not
 5. `src/transaction.c`, `tx_to_bytes`: re-emits the byte after the inflation
    keys when serializing an input with `WALLY_TX_IS_ISSUANCE` set.
 
+6. `src/tx_io.c`, `hash_asset_issuance`: hashes the byte after the inflation
+   keys. The node's signature hashes serialize the whole `CAssetIssuance`
+   wherever they cover an issuance: the segwit v0 hash of every input's
+   issuance and the signed input's own issuance, and taproot's
+   `sha_issuances` and per-input issuance. Without the byte, every signature
+   over a transaction that issues, on any of its inputs, is one the chain
+   refuses.
+
 Together, parse and serialize round-trip Sequentia issuance transactions
-byte-exact. Inputs without the issuance flag are handled identically to
-upstream.
+byte-exact, and signature hashes over them are the chain's. Inputs without
+the issuance flag are handled identically to upstream.
 
 ## 2. The script-path signature hash on Elements
 
@@ -112,6 +120,28 @@ use `0xc0` as before.
 and an Elements transaction is the call this affects. Pass a key version of 0,
 as BIP342 defines it for tapscript keys.
 
+## 3. An issuance without a reissuance token, from a PSET
+
+### Background
+
+An issuance input that creates no reissuance token has a null token count
+(`nInflationKeys`, one byte `0x00`). An explicit count of zero is not null:
+the node checks it as an issued amount, refuses it for not being positive,
+and the transaction fails with `bad-txns-in-ne-out`. The same holds for an
+issuance amount of zero beside a non-zero token count.
+
+### What the patch changes
+
+`src/psbt.c`, `psbt_build_input`: when a PSET input carries unblinded
+issuance values (`issuance_amount`, `inflation_keys`), each one that is zero
+stays null in the extracted transaction instead of becoming an explicit zero.
+Every path from a PSET to a transaction goes through it: `wally_psbt_extract`,
+`wally_psbt_get_id` and the PSET signature hash functions.
+
+A PSET has no field for the denomination, so an issuance extracted from one
+has denomination 0. The chain attaches no rule to the value: it is display
+precision only.
+
 ## Compatibility notes
 
 - **Sequentia-only.** The patched branch assumes the Sequentia issuance
@@ -124,7 +154,7 @@ as BIP342 defines it for tapscript keys.
   consumers from this source tree (as SeqLN does via a git submodule); do not
   mix this header with a stock libwally binary.
 - **Base version.** The branch is based on upstream `release_1.4.0`. To move
-  to a newer upstream release, cherry-pick both patch commits onto the new
+  to a newer upstream release, cherry-pick the patch commits onto the new
   base; upstream 1.5.4 still hashes `0xc0` in `txio_hash_tapleaf_hash`.
 
 ## Consumers
@@ -136,10 +166,18 @@ sets `url = https://github.com/ConcatenaLabs/libwally-core.git`,
 
 ## Tests
 
-Neither patch adds a test in this repository; upstream's suite still applies
-to the unmodified paths. The issuance change is exercised by SeqLN parsing
-Sequentia blocks that contain asset issuances. The signature hash change is
-checked by SeqLN's `common/test/run-tcov_scripts.c`, whose vectors come from
-the Sequentia node's own test framework: the script-path hash, the key-path
-hash and a `SIGHASH_SINGLE|SIGHASH_ANYONECANPAY` hash of one Elements
-transaction, and BIP340 signatures over them.
+`src/test/test_sequentia_issuance.py` checks the first and third patches
+against transactions a Sequentia node mined, each issuing one atom with no
+token: they round-trip byte-exact with the node's txid; the node wallet's
+segwit v0 signature, and a key-path taproot signature the node accepted,
+verify over this library's signature hashes; and a PSET input issuing one
+atom extracts to the node's transaction, denomination 0 and a null token
+count. The tapleaf change is checked by SeqLN's
+`common/test/run-tcov_scripts.c`, whose vectors come from the Sequentia
+node's own test framework: the script-path hash, the key-path hash and a
+`SIGHASH_SINGLE|SIGHASH_ANYONECANPAY` hash of one Elements transaction, and
+BIP340 signatures over them.
+
+`src/ctest/test_elements_tx` fails on this branch: its `test_tx_parse` vector
+is a stock Elements issuance, without the denomination byte, which this
+branch is built to read differently.
