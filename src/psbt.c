@@ -3977,16 +3977,26 @@ static int psbt_build_input(const struct wally_psbt_input *src,
         if ((src->issuance_amount || src->inflation_keys) &&
             (unblinded || (!issuance_amount_commitment && !inflation_keys_commitment))) {
             /* We do not have issuance commitments, or the unblinded flag
-             * has been given: Use the unblinded amounts */
-            if (wally_tx_confidential_value_from_satoshi(src->issuance_amount,
-                                                         issuance_amount,
-                                                         sizeof(issuance_amount)) != WALLY_OK ||
-                wally_tx_confidential_value_from_satoshi(src->inflation_keys,
-                                                         inflation_keys,
-                                                         sizeof(inflation_keys)) != WALLY_OK)
-                return WALLY_EINVAL;
-            issuance_amount_commitment = &issuance_amount_item;
-            inflation_keys_commitment = &inflation_keys_item;
+             * has been given: Use the unblinded amounts.  An amount of zero
+             * is not issued and stays null: the chain refuses an explicit
+             * zero, so an issuance with no reissuance token has a null
+             * token count. */
+            issuance_amount_commitment = NULL;
+            inflation_keys_commitment = NULL;
+            if (src->issuance_amount) {
+                if (wally_tx_confidential_value_from_satoshi(src->issuance_amount,
+                                                             issuance_amount,
+                                                             sizeof(issuance_amount)) != WALLY_OK)
+                    return WALLY_EINVAL;
+                issuance_amount_commitment = &issuance_amount_item;
+            }
+            if (src->inflation_keys) {
+                if (wally_tx_confidential_value_from_satoshi(src->inflation_keys,
+                                                             inflation_keys,
+                                                             sizeof(inflation_keys)) != WALLY_OK)
+                    return WALLY_EINVAL;
+                inflation_keys_commitment = &inflation_keys_item;
+            }
         }
 
         return wally_tx_add_elements_raw_input(tx,
